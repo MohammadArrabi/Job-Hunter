@@ -1,5 +1,6 @@
 from take_screenshot import take_screenshot, URL, SCREENSHOTS_DIR
 from compare import compare_screenshots
+from notifier import send_message, send_photo
 
 COMPANY = "nvidia"
 
@@ -32,8 +33,21 @@ def run_check(company, url):
         print(f"  Page size changed: {result['size_changed']}")
         print(f"  Changed area (left, top, right, bottom): {result['changed_area']}")
         print(f"  See {diff_file} for the changes marked in red")
+        notify_change(company, url, result, diff_file)     
     else:
         print(f"No change ({result['change_percentage']}% of pixels changed)")
+
+
+def notify_change(company, url, result, diff_file):        
+    message = (
+        f"🔔 {company.upper()} career page changed!\n"
+        f"{result['change_percentage']}% of the page changed\n"
+        f"{url}"
+    )
+    if diff_file.exists():
+        send_photo(diff_file, caption=message)
+    else:
+        send_message(message)
 
 
 if __name__ == "__main__":
