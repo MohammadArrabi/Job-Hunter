@@ -4,7 +4,7 @@ from pathlib import Path
 from selenium import webdriver # controls the browser
 from selenium.webdriver.chrome.options import Options # Chrome settings
 
-URL = "https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite?q=Junior&locationHierarchy1=2fcb99c455831013ea52bbe14cf9326c"
+
 SCREENSHOTS_DIR = Path("screenshots")
 
 
@@ -34,8 +34,3 @@ def take_screenshot(url, output_file):
         print(f"Saved screenshot to {output_file} (page height: {height}px)")
     finally:
         driver.quit()
-
-
-if __name__ == "__main__":
-    SCREENSHOTS_DIR.mkdir(exist_ok=True)
-    take_screenshot(URL, SCREENSHOTS_DIR / "nvidia.png")

@@ -1,8 +1,15 @@
-from take_screenshot import take_screenshot, URL, SCREENSHOTS_DIR
+from take_screenshot import take_screenshot, SCREENSHOTS_DIR
 from compare import compare_screenshots
 from notifier import send_message, send_photo
+from ai_vision import read_jobs
+from companies import COMPANIES
 
-COMPANY = "nvidia"
+SENIOR_WORDS = ["senior", "sr.", "staff", "principal", "lead", "manager", "director", "architect", "head of"]
+
+
+def is_junior_friendly(title):
+    title = title.lower()
+    return not any(word in title for word in SENIOR_WORDS)
 
 
 def run_check(company, url):
@@ -14,42 +21,71 @@ def run_check(company, url):
     try:
         take_screenshot(url, new_file)
     except Exception as e:
-        print(f"Screenshot failed, keeping the old files: {e}")
-        return
+        print(f"[{company}] Screenshot failed, keeping the old files: {e}")
+        return "error"
 
     if current_file.exists():
         current_file.replace(previous_file)
     new_file.replace(current_file)
 
     if not previous_file.exists():
-        print("First run: baseline saved. Run again to get a 'before' screenshot.")
-        return
+        print(f"[{company}] First run: baseline saved")
+        return "baseline"
 
     diff_file.unlink(missing_ok=True)
     result = compare_screenshots(previous_file, current_file, diff_file)
 
-    if result["changed"]:
-        print(f"CHANGE DETECTED: {result['change_percentage']}% of pixels changed")
-        print(f"  Page size changed: {result['size_changed']}")
-        print(f"  Changed area (left, top, right, bottom): {result['changed_area']}")
-        print(f"  See {diff_file} for the changes marked in red")
-        notify_change(company, url, result, diff_file)     
-    else:
-        print(f"No change ({result['change_percentage']}% of pixels changed)")
+    if not result["changed"]:
+        print(f"[{company}] No change ({result['change_percentage']}% of pixels changed)")
+        return "unchanged"
+
+    print(f"[{company}] Pixels changed ({result['change_percentage']}%), asking the AI to read the jobs...")
+    jobs = read_jobs(company, previous_file, current_file)
+
+    if jobs is None:
+        notify(company, url, diff_file, f"⚠️ {company.upper()} page changed, but the AI check failed. Please check manually.")
+        return "changed (no AI)"
+
+    print(f"[{company}] AI read {len(jobs.jobs_before)} jobs before, {len(jobs.jobs_after)} jobs after")
+    new_jobs = [title for title in jobs.jobs_after if title not in jobs.jobs_before]
+    junior_jobs = [title for title in new_jobs if is_junior_friendly(title)]
+
+    for title in new_jobs:
+        print(f"  new: {title}{'' if title in junior_jobs else '  (skipped: senior)'}")
+
+    if not junior_jobs:
+        print(f"[{company}] No new junior jobs (no message sent)")
+        return "no new junior jobs"
+
+    job_lines = "\n".join(f"• {title}" for title in junior_jobs[:10])
+    notify(company, url, diff_file, f"🔔 New junior jobs at {company.upper()}!\n{job_lines}")
+    return "new jobs"
 
 
-def notify_change(company, url, result, diff_file):        
-    message = (
-        f"🔔 {company.upper()} career page changed!\n"
-        f"{result['change_percentage']}% of the page changed\n"
-        f"{url}"
-    )
+def notify(company, url, diff_file, text):
+    message = f"{text}\n{url}"
     if diff_file.exists():
         send_photo(diff_file, caption=message)
     else:
         send_message(message)
 
 
-if __name__ == "__main__":
+def main():
     SCREENSHOTS_DIR.mkdir(exist_ok=True)
-    run_check(COMPANY, URL)
+    statuses = {}
+
+    for company in COMPANIES:
+        name = company["name"]
+        try:
+            statuses[name] = run_check(name, company["url"])
+        except Exception as e:
+            print(f"[{name}] Unexpected error: {e}")
+            statuses[name] = "error"
+
+    print("\nSummary:")
+    for name, status in statuses.items():
+        print(f"  {name:<10} {status}")
+
+
+if __name__ == "__main__":
+    main()
